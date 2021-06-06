@@ -1,18 +1,39 @@
 data <- read.csv("train.csv", header = TRUE, sep = ",")
 str(data)
 summary(data)
+sd(data$battery_power)
+sd(data$blue)
+sd(data$dual_sim)
+sd(data$fc)
+sd(data$four_g)
+sd(data$int_memory)
+sd(data$m_dep)
+sd(data$mobile_wt)
+
+boxplot(data$battery_power, main="Boxplot of Battery Power",
+        ylab="battery_power")
+
+boxplot(data$clock_speed, main="Boxplot of Clock Speed",
+        ylab="clock_speed") 
+
+boxplot(data$fc, main="Boxplot of Front Camera",
+        ylab="fc") 
+
+boxplot(data$int_memory, main="Boxplot of Internal Memory",
+        ylab="int_memory") 
 
 #mengetahui jumlah data yang mempunya missing value
 library(mice)
 md.pattern(data)
 
+
+#melakukan diskretisasi pada atribut price dengan membagi menjadi 3 kategori
+#menggunakan metode equal width
 library(infotheo)
-#melakukan diskretisasi pada atribut quality dengan membagi menjadi 3 kategori
-#dengan metode equal width
 ew.price <- discretize(data$price_range, "equalwidth", 3)
 ew.price
 
-#Gabungkan hasil diskretisasi dengan data hasil praproses nomor 1
+#Gabungkan hasil diskretisasi dengan data hasil praproses
 ew.price$x = as.factor(ew.price$X) #menggabungkan atribut baru kedalam data
 data$price_discre = ew.price$X #memberi nama pada atribut baru
 data
@@ -25,17 +46,8 @@ data$price_trans[data$price_discre == 3 ] <- "high"
 data
 
 #cek outlier
-boxplot(data$battery_power)
-title("Boxplot of battery power")
-
-boxplot(data$fc)
-title("Boxplot of fc")
-
-boxplot(data$mobile_wt)
-title("Boxplot of mobile wt")
 
 outliers <- boxplot(data$battery_power, plot=FALSE)$out
-
 outliers2 <- boxplot(data$clock_speed, plot=FALSE)$out
 outliers3 <- boxplot(data$fc, plot=FALSE)$out
 data<- data[-which(data$fc %in% outliers3),]
@@ -79,9 +91,11 @@ library(gridExtra)
 library(ggplot2)
 library(scales)
 library(corrplot)
+
 unique(data$price_discre)
 
 data <- subset(data, select = -price_trans)
+data <- subset(data, select = -price_range)
 
 a <-cor(data)
 corrplot(a, method="color")
@@ -96,7 +110,7 @@ data$blue <- as.numeric(data$blue)
 data$dual_sim <- as.numeric(data$dual_sim)
 data$four_g <- as.numeric(data$four_g)
 data$touch_screen <-as.numeric(data$touch_screen)
-data$price_range <- as.numeric(data$price_range)
+#data$price_range <- as.numeric(data$price_range)
 
 smp_size <- floor(0.75 * nrow(data))
 
@@ -105,45 +119,54 @@ set.seed(123)
 train_ind <- sample(seq_len(nrow(data)), size = smp_size)
 
 train <- data[train_ind, ]
-test <- data[-train_ind, ]
+valid <- data[-train_ind, ]
 
-x_train <- subset(train, select = -price_range)
-y_train <- train$price_range
-x_test <- subset(test, select = -price_range)
-y_test <- test$price_range
+x_train <- subset(train, select = -price_discre)
+y_train <- train$price_discre
+x_valid <- subset(valid, select = -price_discre)
+y_valid <- valid$price_discre
 
-#SVC
+
+#SVM Model
 model <- svm(x_train,y_train, type = 'C-classification', 
              kernel = 'linear') 
 
 print(model)
 summary(model)
 
-# testing our model
-pred <- predict(model, x_test)
 
-pred <- as.factor(pred)
+#evaluasi model
+predvalid <- predict(model, x_valid)
+predvalid <- as.factor(predvalid)
 
-y_test <- as.factor(y_test)
-confusionMatrix(y_test,pred)
+y_valid <- as.factor(y_valid)
+confusionMatrix(y_valid,predvalid)
 
-#KNN-CLASSIFIER
-train_scale <- scale(train[, 1:20])
-test_scale <- scale(test[, 1:20])
-
-#fitting
-classifier_knn <- knn(train = train_scale,
-                      test = test_scale,
-                      cl = train$price_range, #cl arguement
-                      k = 45)
+outOfSampleAccuracy <- sum(predvalid == valid$price_discre)/length(predvalid)
+outOfSampleError <- (1 - outOfSampleAccuracy)
+print(outOfSampleAccuracy)
+print(outOfSampleError)
 
 
-# Confusion Matrix
-cm <- table(test$price_range, classifier_knn)
-cm
+#buat datatest
+sampletest <- floor(0.5 * nrow(data))
+test_ind <- sample(seq_len(nrow(data)), size=sampletest)
+test <- data[test_ind, ]
+test <- subset(test, select = -price_discre)
+test
 
-#MODEL EVALUATION AND CALCULATING SAMPLE ERROR
-# K = 45
 
-misClassError <- mean(classifier_knn != test$price_range)
-(paste('Accuracy =', 1-misClassError))
+predtest <- predict(model, test)
+print(predtest)
+
+price_test <- c(predtest)
+test$price_test <- price_test
+
+#transformasi
+test$price_trans<-NULL
+test$price_trans[test$price_test == 1 ] <- "low"
+test$price_trans[test$price_test == 2 ] <- "medium"
+test$price_trans[test$price_test == 3 ] <- "high"
+
+test <- subset(test, select = -price_test)
+test
